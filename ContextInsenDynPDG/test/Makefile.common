@@ -1,0 +1,7 @@
+all: main
+
+%.ll: %.c
+	$(CLANG) -S -emit-llvm -c $< -o $@ $(CFLAGS) $(LDFLAGS)
+
+clean:
+	rm -f *.ll *.bc main main.ll.datalog

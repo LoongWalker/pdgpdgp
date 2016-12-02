@@ -1,0 +1,36 @@
+Z 65536
+
+Assign(to : Z, from : Z)
+PointsTo(var : Z, loc : Z) printtuples
+# A pointer points to what it is assigned to
+PointsTo(var, heap) :- Assign(var, heap).
+
+# A pointer points to the transitive closure of its assignments
+PointsTo(to, heap) :- Assign(to, from), PointsTo(from, heap).
+
+##### Begin facts
+#   %1 = alloca i8*, align 8
+Assign("**0", "stack_0").
+#   store i8* %c, i8** %1, align 8
+Assign("*0_tmp", "*1").
+#   %2 = load i8** %1, align 8
+Assign("*2", "*0_tmp").
+#   %1 = alloca i32, align 4
+Assign("*3", "stack_1").
+#   %2 = alloca i32, align 4
+Assign("*4", "stack_2").
+#   %3 = alloca i8**, align 8
+Assign("***5", "stack_3").
+#   %c = alloca i8*, align 8
+Assign("**6", "stack_4").
+#   store i8** %argv, i8*** %3, align 8
+Assign("**5_tmp", "**7").
+#   %4 = call noalias i8* @malloc(i64 1) #2
+Assign("*8", "heap_0").
+#   store i8* %4, i8** %c, align 8
+Assign("*6_tmp", "*8").
+#   %5 = load i8** %c, align 8
+Assign("*9", "*6_tmp").
+#   call void @modify(i8* %5)
+Assign("*1", "*9").
+#### End facts

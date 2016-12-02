@@ -1,0 +1,11 @@
+**/main.ll
+**/main.dot
+**/main.smt2
+**/out.bc
+**/out.ll
+**/out.png
+**/out.smt2
+**/z3.out
+**/tags
+build/**
+**/*.swp

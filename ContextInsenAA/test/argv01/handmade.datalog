@@ -1,0 +1,61 @@
+## Handcrafted output for main.c
+### Context insensitive interprocedural alias analysis specification
+Z 64
+
+# Dynamic allocation of memory. Globals are treated in the same way as heap
+# allocations
+#Allocate(var : Z, heap : Z)
+
+# Assignment
+Assign(to : Z, from : Z)
+
+# A variable pointing to memory location
+PointsTo(var : Z, loc : Z) printtuples
+
+# If the variable is a heap allocation then we know which heap item it points
+# to.
+#PointsTo(var, heap) :- Allocate(var, heap).
+PointsTo(var, heap) :- Assign(var, heap).
+
+# Find the transitive closure of pointer assignments
+PointsTo(to, heap) :- Assign(to, from), PointsTo(from, heap).
+
+#### argv01
+# %1 = alloca i32, align 4
+Assign("*1", "h1").
+
+# %2 = alloca i8**, align 8
+Assign("***2", "h2").
+
+# %prog = alloca i8*, align 8
+#Allocate("**prog", "h3").
+Assign("**prog", "h3").
+
+#store i32 %argc, i32* %1, align 4
+# Since first argument (value being stored) is not a pointer, this does not
+# need be tracker (it is a non-pointer assignment)
+
+# store i8** %argv, i8*** %2, align 8
+# dereference the second argument to the store and assign the first argument of
+# the store to it
+Assign("**2", "**argv").
+
+# %3 = load i8*** %2, align 8
+# The return of the load aliases to a dereferenced copy of the argument
+Assign("**3", "**2").
+
+# %4 = getelementptr inbounds i8** %3, i64 0
+# Consider all getelementptr calls to the same pointer to alias. No
+# dereferencing is done in getelementptr: it is simply pointer arithmetic
+Assign("**4", "**3").
+
+# %5 = load i8** %4, align 8
+# Single derefernce on load
+Assign("*5", "*4").
+
+# store i8* %5, i8** %prog, align 8
+# Single dereference on 2nd argument to store
+Assign("*prog", "*5").
+
+# %6 = load i8** %prog, align 8
+Assign("*6", "*prog").

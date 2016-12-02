@@ -1,0 +1,196 @@
+(set-option :fixedpoint.engine datalog)
+; This sort is used to define all relations. It is the size of an
+; unsigned on the target machine.
+(define-sort s () (_ BitVec 32))
+
+; Data dependency (assign to from) => (to<--from)
+(declare-rel assign (s s))
+; Control dependency (control-dep to from) => (to<--from)
+(declare-rel control-dep (s s))
+; A program dependency is either a control or data dependency
+(declare-rel prog-dep (s s))
+; points-to relation: this is relation contains any two values
+; (regardless of if they are pointers) if they have a common
+; ancestor in the data dependency graph (i.e. backwards reachable)
+(declare-rel points-to (s s))
+
+(declare-var to s)
+(declare-var from s)
+(declare-var pred s)
+
+; A program dependency is either a control or data dependency
+; This relation defines the program dependency graph
+(rule (=> (control-dep to from) (prog-dep to from)))
+(rule (=> (assign to from) (prog-dep to from)))
+; Recusrive step: create the transitive closure of program
+; dependencies
+(rule (=> (and (prog-dep to from) (prog-dep from pred))
+	(prog-dep to pred)))
+
+; The data dependency graph can be used to query if two pointers
+; (or, any two values) share a common data dependency
+(rule (=> (assign to from) (points-to to from)))
+
+; A pointer points to the transitive closure of its assignments
+(rule (=> (and (assign to from) (points-to from pred))
+	(points-to to pred)))
+
+
+; Begin Facts
+
+;   %1 = alloca i32, align 4
+(rule (assign #x00000000 #x00000001))
+;   %2 = alloca i32, align 4
+(rule (assign #x00000002 #x00000003))
+;   store i32 %a, i32* %1, align 4
+(rule (assign #x00000005 #x00000000))
+(rule (assign #x00000005 #x00000004))
+(rule (assign #x00000006 #x00000005))
+;   store i32 %b, i32* %2, align 4
+(rule (assign #x00000008 #x00000002))
+(rule (assign #x00000008 #x00000007))
+(rule (assign #x00000009 #x00000008))
+;   %3 = load i32* %1, align 4
+(rule (assign #x0000000a #x00000000))
+(rule (assign #x0000000a #x00000006))
+;   %4 = load i32* %2, align 4
+(rule (assign #x0000000b #x00000002))
+(rule (assign #x0000000b #x00000009))
+;   %5 = add nsw i32 %3, %4
+(rule (assign #x0000000c #x0000000a))
+(rule (assign #x0000000c #x0000000b))
+;   ret i32 %5
+(rule (assign #x0000000d #x0000000c))
+(rule (assign #x0000000e #x0000000d))
+;   %1 = alloca i32, align 4
+(rule (assign #x0000000f #x00000010))
+;   %2 = alloca i32, align 4
+(rule (assign #x00000011 #x00000012))
+;   store i32 %a, i32* %1, align 4
+(rule (assign #x00000014 #x0000000f))
+(rule (assign #x00000014 #x00000013))
+(rule (assign #x00000015 #x00000014))
+;   store i32 %b, i32* %2, align 4
+(rule (assign #x00000017 #x00000011))
+(rule (assign #x00000017 #x00000016))
+(rule (assign #x00000018 #x00000017))
+;   %3 = load i32* %1, align 4
+(rule (assign #x00000019 #x0000000f))
+(rule (assign #x00000019 #x00000015))
+;   %4 = load i32* %2, align 4
+(rule (assign #x0000001a #x00000011))
+(rule (assign #x0000001a #x00000018))
+;   %5 = sub nsw i32 %3, %4
+(rule (assign #x0000001b #x00000019))
+(rule (assign #x0000001b #x0000001a))
+;   ret i32 %5
+(rule (assign #x0000001c #x0000001b))
+(rule (assign #x0000001d #x0000001c))
+;   %1 = alloca i32, align 4
+(rule (assign #x0000001e #x0000001f))
+;   %2 = alloca i32, align 4
+(rule (assign #x00000020 #x00000021))
+;   %3 = alloca i8**, align 8
+(rule (assign #x00000022 #x00000023))
+;   %r1 = alloca i32, align 4
+(rule (assign #x00000024 #x00000025))
+;   %r2 = alloca i32, align 4
+(rule (assign #x00000026 #x00000027))
+;   %a = alloca i32, align 4
+(rule (assign #x00000028 #x00000029))
+;   %b = alloca i32, align 4
+(rule (assign #x0000002a #x0000002b))
+;   %f1 = alloca i32 (i32, i32)*, align 8
+(rule (assign #x0000002c #x0000002d))
+;   %f2 = alloca i32 (i32, i32)*, align 8
+(rule (assign #x0000002e #x0000002f))
+;   store i32 0, i32* %1
+(rule (assign #x00000030 #x0000001e))
+(rule (assign #x00000030 #x00000031))
+(rule (assign #x00000032 #x00000030))
+;   store i32 %argc, i32* %2, align 4
+(rule (assign #x00000034 #x00000020))
+(rule (assign #x00000034 #x00000033))
+(rule (assign #x00000035 #x00000034))
+;   store i8** %argv, i8*** %3, align 8
+(rule (assign #x00000037 #x00000022))
+(rule (assign #x00000037 #x00000036))
+(rule (assign #x00000038 #x00000037))
+;   store i32 1, i32* %a, align 4
+(rule (assign #x00000039 #x00000028))
+(rule (assign #x00000039 #x0000003a))
+(rule (assign #x0000003b #x00000039))
+;   store i32 2, i32* %b, align 4
+(rule (assign #x0000003c #x0000002a))
+(rule (assign #x0000003c #x0000003d))
+(rule (assign #x0000003e #x0000003c))
+;   store i32 (i32, i32)* @add, i32 (i32, i32)** %f1, align 8
+(rule (assign #x00000040 #x0000002c))
+(rule (assign #x00000040 #x0000003f))
+(rule (assign #x00000041 #x00000040))
+;   store i32 (i32, i32)* @sub, i32 (i32, i32)** %f2, align 8
+(rule (assign #x00000043 #x0000002e))
+(rule (assign #x00000043 #x00000042))
+(rule (assign #x00000044 #x00000043))
+;   %4 = load i32 (i32, i32)** %f1, align 8
+(rule (assign #x00000045 #x0000002c))
+(rule (assign #x00000045 #x00000041))
+;   %5 = load i32* %a, align 4
+(rule (assign #x00000046 #x00000028))
+(rule (assign #x00000046 #x0000003b))
+;   %6 = load i32* %b, align 4
+(rule (assign #x00000047 #x0000002a))
+(rule (assign #x00000047 #x0000003e))
+;   %7 = call i32 %4(i32 %5, i32 %6)
+; Function return
+(rule (=> (points-to #x00000045 #x0000003f) (assign #x00000048 #x0000000e)))
+; Function arguments
+(rule (=> (points-to #x00000045 #x0000003f) (assign #x00000004 #x00000046)))
+(rule (=> (points-to #x00000045 #x0000003f) (assign #x00000007 #x00000047)))
+; Function return
+(rule (=> (points-to #x00000045 #x00000042) (assign #x00000048 #x0000001d)))
+; Function arguments
+(rule (=> (points-to #x00000045 #x00000042) (assign #x00000013 #x00000046)))
+(rule (=> (points-to #x00000045 #x00000042) (assign #x00000016 #x00000047)))
+;   store i32 %7, i32* %r1, align 4
+(rule (assign #x00000049 #x00000024))
+(rule (assign #x00000049 #x00000048))
+(rule (assign #x0000004a #x00000049))
+;   %8 = load i32 (i32, i32)** %f2, align 8
+(rule (assign #x0000004b #x0000002e))
+(rule (assign #x0000004b #x00000044))
+;   %9 = load i32* %a, align 4
+(rule (assign #x0000004c #x00000028))
+(rule (assign #x0000004c #x0000003b))
+;   %10 = load i32* %b, align 4
+(rule (assign #x0000004d #x0000002a))
+(rule (assign #x0000004d #x0000003e))
+;   %11 = call i32 %8(i32 %9, i32 %10)
+; Function return
+(rule (=> (points-to #x0000004b #x0000003f) (assign #x0000004e #x0000000e)))
+; Function arguments
+(rule (=> (points-to #x0000004b #x0000003f) (assign #x00000004 #x0000004c)))
+(rule (=> (points-to #x0000004b #x0000003f) (assign #x00000007 #x0000004d)))
+; Function return
+(rule (=> (points-to #x0000004b #x00000042) (assign #x0000004e #x0000001d)))
+; Function arguments
+(rule (=> (points-to #x0000004b #x00000042) (assign #x00000013 #x0000004c)))
+(rule (=> (points-to #x0000004b #x00000042) (assign #x00000016 #x0000004d)))
+;   store i32 %11, i32* %r2, align 4
+(rule (assign #x0000004f #x00000026))
+(rule (assign #x0000004f #x0000004e))
+(rule (assign #x00000050 #x0000004f))
+;   %12 = load i32* %r1, align 4
+(rule (assign #x00000051 #x00000024))
+(rule (assign #x00000051 #x0000004a))
+;   %13 = load i32* %r2, align 4
+(rule (assign #x00000052 #x00000026))
+(rule (assign #x00000052 #x00000050))
+;   %14 = sub nsw i32 %12, %13
+(rule (assign #x00000053 #x00000051))
+(rule (assign #x00000053 #x00000052))
+;   ret i32 %14
+(rule (assign #x00000054 #x00000053))
+(rule (assign #x00000055 #x00000054))
+
+; End Facts
