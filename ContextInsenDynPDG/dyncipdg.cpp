@@ -79,6 +79,13 @@ cl::opt<bool>
 								 "an assertion will be tagged with metadata")
 			, cl::init(false));
 
+static cl::list<std::string>
+  impactIds("impact"
+            , cl::desc("execute Z3 and separately mark instructions which are"
+                       " impacted/may-impact the list of provided instruction"
+                       " IDs")
+	          , cl::CommaSeparated);
+
 // Returns true if the passed function should not be visited
 static bool skipFunction(const Function *f) {
     // ignore indirect functions
@@ -864,7 +871,8 @@ struct ContextInsenDynPDG : ModulePass {
     // Next, find potential functions which could be called by this
     // callsite. These are functions which have the same number of arguments
     // and the same type of arguments.
-    std::vector<Function *> funcs = getMatchingFunctions(csInst);
+    //std::vector<Function *> funcs = getMatchingFunctions(csInst);
+    std::vector<Function *> funcs = getMatchingFunctions(I);
     assert(funcs.size() && "no matching functions for callsite");
     DEBUG_MSG("\tFound " << funcs.size() << " matching function(s)\n");
 
@@ -999,12 +1007,13 @@ struct ContextInsenDynPDG : ModulePass {
     getPDGConstraints(M, ctx, zfp);
 
     // Attempt to open a stream to the passed path, crash on failure.
-    std::string ec;
+    std::error_code ec;
     // Open file in text mode
     raw_fd_ostream *outFile = new raw_fd_ostream(path.c_str(), ec
         , sys::fs::OpenFlags::F_Text);
-    if (!ec.empty()) {
-      errs() << "[ERROR] Unable to open file " << path << ": " << ec 
+    //if (!ec.empty()) {
+    if (ec) {
+      errs() << "[ERROR] Unable to open file " << path << ": " << ec.message()
              << '\n';
       exit(EXIT_FAILURE);
     }
@@ -1318,10 +1327,12 @@ struct ContextInsenDynPDG : ModulePass {
             fact = createAssign(i, agg);
           }
           else if (LandingPadInst *i = dyn_cast<LandingPadInst>(&I)) {
+            // TODO: what are the dependenciers for a landingpad?
+
             // TODO: The landing pad instruction is dependent on the
             // personality function?
-            Value *persFunc = i->getPersonalityFn();
-            fact = createAssign(i, persFunc);
+            //Value *persFunc = i->getPersonalityFn();
+            //fact = createAssign(i, persFunc);
           }
           else if (isa<DbgDeclareInst>(&I)) {
             // Debug declare can be skipped: it is only metadata
@@ -1534,11 +1545,13 @@ struct ContextInsenDynPDG : ModulePass {
 		}
 		// z3_out.tmp contains one hex string per-line with leading zeros
 		// Open the output file and parse each line to an integer
-		std::string ec;
+		//std::string ec;
+		std::error_code ec;
     raw_fd_ostream *z3Out = new raw_fd_ostream(smt2Path.c_str(), ec
         , sys::fs::OpenFlags::F_Text);
-    if (!ec.empty()) {
-      errs() << "[ERROR] Unable to open file: " << smt2Path << ": " << ec 
+    //if (!ec.empty()) {
+    if (ec) {
+      errs() << "[ERROR] Unable to open file: " << smt2Path << ": " << ec.message()
              << '\n';
       exit(EXIT_FAILURE);
     }
@@ -1560,7 +1573,8 @@ struct ContextInsenDynPDG : ModulePass {
 			if (Instruction *i = dyn_cast<Instruction>(v)) {
 				// Metadata is only inserted on instructions
 				LLVMContext &C = M.getContext();
-				Value* elts[] = { ConstantInt::get(C, APInt(1, 1)) };
+				//Value* elts[] = { ConstantInt::get(C, APInt(1, 1)) };
+        Metadata *elts[] = { ValueAsMetadata::get(ConstantInt::get(C, APInt(1, 1))) };
 				MDNode* md_node = MDNode::get(C, elts);
 				i->setMetadata("AssertSlice", md_node);
 			}

@@ -47,8 +47,8 @@ Value *ValToStrDB::getConstExprUse(ConstantExpr *ce) {
 
 std::string ValToStrDB::saveAndGetID(Value *v) {
   assert(v && "NULL passed");
-  DEBUG_MSG("saveAndGetID():\n");
-  DEBUG_MSG("\tvalue: " << *v << '\n');
+  //DEBUG_MSG("saveAndGetID():\n");
+  //DEBUG_MSG("\tvalue: " << *v << '\n');
 
   // attempt to convert the value into something we can handle
   if (ConstantExpr *ce = dyn_cast<ConstantExpr>(v)) {
@@ -162,11 +162,11 @@ void ValToStrDB::dumpIDMapToModule(Module &M) {
   funcNMDN->dropAllReferences();
 
   // Function argument values. Will be stored in an MDNode in funcArgNMDN
-  std::vector<Value *> funcArgs;
+  std::vector<Metadata *> funcArgs;
   // Global values. Will be stored in an MDNode in globalsNMDN
-  std::vector<Value *> globalVars;
+  std::vector<Metadata *> globalVars;
   // Functions. Will be stored in a NMDNode in funcNMDN
-  std::vector<Value *> funcs;
+  std::vector<Metadata *> funcs;
 
   for (auto i = IDMap.begin(), e = IDMap.end(); i != e; ++i) {
     // Assumption: There two types of values stored in the ID map: instructions
@@ -207,9 +207,9 @@ void ValToStrDB::dumpIDMapToModule(Module &M) {
           unsignedToAPInt(arg->getArgNo()));
 
       // First the function 
-      funcArgs.push_back(f);
+      funcArgs.push_back(ValueAsMetadata::get(f));
       // Then the argument position
-      funcArgs.push_back(ci);
+      funcArgs.push_back(ValueAsMetadata::get(ci));
       // Then the ID
       funcArgs.push_back(mds);
     }
@@ -221,7 +221,7 @@ void ValToStrDB::dumpIDMapToModule(Module &M) {
       //         << "It will not be saved: " << *gv << '\n';
       //}
       // First the global
-      globalVars.push_back(gv);
+      globalVars.push_back(ValueAsMetadata::get(gv));
       // Then the ID 
       globalVars.push_back(mds);
     }
@@ -232,7 +232,7 @@ void ValToStrDB::dumpIDMapToModule(Module &M) {
     }
     else if (isa<Function>(v)) {
       // First the function
-      funcs.push_back(v);
+      funcs.push_back(ValueAsMetadata::get(v));
       // Then the ID
       funcs.push_back(mds);
     }
@@ -285,7 +285,8 @@ std::map<Value *, std::string> ValToStrDB::parseIDMapFromModule(Module &M) {
         //MDNode *mdn = dyn_cast<MDNode>(md);
         //assert(mdn != NULL && "Non-MDNode metadata found");
         assert(mdn->getNumOperands() == 1 && "Malformed MDNode found (size != 1)");
-        Value *val = mdn->getOperand(0);
+        //Value *val = mdn->getOperand(0);
+        Metadata *val = mdn->getOperand(0).get();
 
         MDString *mds = dyn_cast<MDString>(val);
         assert(mds && "Instruction with non MDString metadata");
@@ -306,15 +307,19 @@ std::map<Value *, std::string> ValToStrDB::parseIDMapFromModule(Module &M) {
     assert(mdn);
     assert((mdn->getNumOperands() % 3 == 0) && "func mdnode of wrong size");
     for (size_t i = 0; i < mdn->getNumOperands(); i += 3) {
-      Value *fVal = mdn->getOperand(i);
-      Value *posVal = mdn->getOperand(i + 1);
-      Value *strVal = mdn->getOperand(i + 2);
+      Metadata *fVal = mdn->getOperand(i).get();
+      Metadata *posValM = mdn->getOperand(i + 1).get();
+      Metadata *strVal = mdn->getOperand(i + 2).get();
 
-      Function *f = dyn_cast<Function>(fVal);
-      assert(f && "First operand not function");
+      ValueAsMetadata *fVM = dyn_cast<ValueAsMetadata>(fVal);
+      assert(fVM && "First operand not value metadata");
+      Function *f = dyn_cast<Function>(fVM->getValue());
 
       //ConstantInt *ci = dyn_cast<ConstantInt>(posVal);
       //assert(f && "Second operand not ConstantInt");
+      ValueAsMetadata *posVM = dyn_cast<ValueAsMetadata>(posValM);
+      assert(posVM && "non ValueAsMetadata position");
+      Value *posVal = posVM->getValue();
       uint64_t pos = constantIntToUint64(posVal);
 
       MDString *mds = dyn_cast<MDString>(strVal);
@@ -340,13 +345,15 @@ std::map<Value *, std::string> ValToStrDB::parseIDMapFromModule(Module &M) {
     assert(mdn);
     assert((mdn->getNumOperands() % 2 == 0) && "global mdnode of wrong size");
     for (size_t i = 0; i < mdn->getNumOperands(); i += 2) {
-      Value *global = mdn->getOperand(i);
-      Value *strVal = mdn->getOperand(i + 1);
+      Metadata *globalMD = mdn->getOperand(i).get();
+      Metadata *strValMD = mdn->getOperand(i + 1).get();
 
-      GlobalVariable *g = dyn_cast<GlobalVariable>(global);
+      ValueAsMetadata *globalVMD = dyn_cast<ValueAsMetadata>(globalMD);
+      assert(globalVMD && "global not ValueASMetadata");
+      GlobalVariable *g = dyn_cast<GlobalVariable>(globalVMD->getValue());
       assert(g && "First operand not GlobalVar");
 
-      MDString *mds = dyn_cast<MDString>(strVal);
+      MDString *mds = dyn_cast<MDString>(strValMD);
       assert(mds && "Second operand not MDString");
 
       std::string str = mds->getString();
@@ -364,12 +371,16 @@ std::map<Value *, std::string> ValToStrDB::parseIDMapFromModule(Module &M) {
     assert(mdn);
     assert((mdn->getNumOperands() % 2 == 0) && "func mdnode of wrong size");
     for (size_t i = 0; i < mdn->getNumOperands(); i += 2) {
-      Value *func = mdn->getOperand(i);
-      Value *strVal = mdn->getOperand(i + 1);
+      Metadata *funcMD = mdn->getOperand(i).get();
+      Metadata *strValMD = mdn->getOperand(i + 1).get();
 
-      Function *f = dyn_cast<Function>(func);
+      ValueAsMetadata *funcVM = dyn_cast<ValueAsMetadata>(funcMD);
+      assert(funcVM && "non value as metadata function");
+
+      Function *f = dyn_cast<Function>(funcVM->getValue());
       assert(f && "first operand not Function");
-      MDString *mds = dyn_cast<MDString>(strVal);
+
+      MDString *mds = dyn_cast<MDString>(strValMD);
       assert(mds && "Second operand not MDString");
 
       std::string str = mds->getString();

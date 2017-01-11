@@ -3,7 +3,8 @@ set -u
 
 #### Edit these variables accordingly
 # Location where LLVM is installed (the bin dir)
-export LLVM_INSTALL_DIR=/home/markus/src/install-3.5/bin
+#export LLVM_INSTALL_DIR=/home/markus/src/install-3.5/bin
+export LLVM_INSTALL_DIR=/usr/bin
 
 # Location of datalog library files
 export PASSES=`pwd`/../../build

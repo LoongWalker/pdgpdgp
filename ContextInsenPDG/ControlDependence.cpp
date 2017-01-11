@@ -268,7 +268,7 @@ void ControlDependence::toDot(std::string name) const {
  // std::ofstream out;
   //out.open(name, std::ios::out);
 
-  std::string errInfo;
+  std::error_code errInfo;
   std::string filename;
   filename = "cdg.";
   filename += name;
@@ -279,8 +279,9 @@ void ControlDependence::toDot(std::string name) const {
       , sys::fs::OpenFlags::F_Text);
 
   // check for errors
-  if (!errInfo.empty()) {
-    errs() <<  "[Warning] Error opening output file: " << errInfo << '\n';
+  //if (!errInfo.empty()) {
+  if (errInfo) {
+    errs() <<  "[Warning] Error opening output file: " << errInfo.message() << '\n';
     return;
   }
 
@@ -352,7 +353,7 @@ void ControlDependence::toDot(std::string name, depmap map) const {
  // std::ofstream out;
   //out.open(name, std::ios::out);
 
-  std::string errInfo;
+  std::error_code errInfo;
   std::string filename;
   filename = "cdg.";
   filename += name;
@@ -363,8 +364,8 @@ void ControlDependence::toDot(std::string name, depmap map) const {
       , sys::fs::OpenFlags::F_Text);
 
   // check for errors
-  if (!errInfo.empty()) {
-    errs() <<  "[Warning] Error opening output file: " << errInfo << '\n';
+  if (errInfo) {
+    errs() <<  "[Warning] Error opening output file: " << errInfo.message() << '\n';
     return;
   }
 
