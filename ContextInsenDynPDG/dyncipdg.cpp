@@ -1483,6 +1483,10 @@ struct ContextInsenDynPDG : ModulePass {
 			markAsserts(M, path);
 		}
 
+    if (impactIds.size()) {
+      addImpactedAndMayImpact(impactIds, M, path);
+    }
+
 
     // IR was modified (but only the metadata)
     return true;
@@ -1493,12 +1497,19 @@ struct ContextInsenDynPDG : ModulePass {
   // The variable will first be defined and then used in the query.
   void writeUniversalQuery(Instruction *i, std::string varName, 
       raw_fd_ostream *os) {
-    // Write a definition for the variable
-    // s is the sort of all the IDs used in Z3
-    (*os) << "(declare-var " + varName + " s)\n";
 
     unsigned instId = IDMap.saveAndGetIntID(i);
     std::string idStr = Utils::to_const_bitvec(instId);
+
+    writeUniversalQuery(idStr, varName, os);
+
+  }
+
+  void writeUniversalQuery(std::string idStr, std::string varName
+      , raw_fd_ostream *os) {
+    // Write a definition for the variable
+    // s is the sort of all the IDs used in Z3
+    (*os) << "(declare-var " + varName + " s)\n";
 
     // Write the query
     (*os) << "(query (prog-dep " << idStr << " " << varName 
@@ -1519,10 +1530,12 @@ struct ContextInsenDynPDG : ModulePass {
     return;
   }
 
-	// Given the construction of the PDG, add metadata to each instruction on the
-	// slice of the assertion.
-	void markAsserts(Module &M, std::string smt2Path) {
-    DEBUG_MSG("[DEBUG] Marking assertions");
+  // Assuming that smt2Path is the path to a .smt2 file with a
+  // query in it, run Z3 on smt2Path an mark any nodes in the
+  // output with metadata mdName.
+  void markZ3Output(Module &M, std::string smt2Path
+                   , std::string mdName) {
+    DEBUG_MSG("[DEBUG] Marking Z3 output, md name:" << mdName);
 		assert(z3BinLoc.size() && "z3 path not set");
 		assert(smt2Path.size() && ".smt2 path not set");
 		std::string z3OutputName = "z3_out.tmp";
@@ -1582,11 +1595,177 @@ struct ContextInsenDynPDG : ModulePass {
 		// Close and cleanup file
 		z3Out->close();
 		delete z3Out;
+  }
+
+	// Given the construction of the PDG, add metadata to each instruction on the
+	// slice of the assertion.
+	void markAsserts(Module &M, std::string smt2Path) {
+    markZ3Output(M, smt2Path, "AssertSlice");
+    //DEBUG_MSG("[DEBUG] Marking assertions");
+		//assert(z3BinLoc.size() && "z3 path not set");
+		//assert(smt2Path.size() && ".smt2 path not set");
+		//std::string z3OutputName = "z3_out.tmp";
+
+		//std::string cmd;
+		//cmd = z3BinLoc
+		//		 + " " + smt2Path
+		//		 + " | tail -n +2" // trim first line
+		//		 + " | sed '/sat/d'" // remove results of query
+		//		 + " | sed 's/^(or //g'" // remove "(or" on first line
+		//		 + " | sed 's/^[ \t]*//'" // remove leading whitespace
+		//		 + " | sed 's/(= (:var 0) //g'"  // remove leading (= 
+		//		 + " | sed 's/)//g'" // remove trailing paren
+		//		 + " | sed 's/#x//g'" // remove leading #x
+		//		 + "  >" + z3OutputName; // save in temporary file
+		//int retCode = system(cmd.c_str());
+		//if (retCode != 0) {
+		//	errs() << "[ERROR] error running z3/parsing output: " << retCode << '\n';
+		//	exit(EXIT_FAILURE);
+		//}
+		//// z3_out.tmp contains one hex string per-line with leading zeros
+		//// Open the output file and parse each line to an integer
+		////std::string ec;
+		//std::error_code ec;
+    //raw_fd_ostream *z3Out = new raw_fd_ostream(smt2Path.c_str(), ec
+    //    , sys::fs::OpenFlags::F_Text);
+    ////if (!ec.empty()) {
+    //if (ec) {
+    //  errs() << "[ERROR] Unable to open file: " << smt2Path << ": " << ec.message()
+    //         << '\n';
+    //  exit(EXIT_FAILURE);
+    //}
+
+		//std::ifstream tmpFile(z3OutputName);
+		//for (std::string line; getline(tmpFile, line); ) { 
+		//	// Convert from hex to decimal
+		//	DEBUG_MSG("  line: " << line << '\n');
+		//	unsigned int cur = std::stoul(line, nullptr, 16);
+		//	// Convert to string to lookup in map
+		//	//std::string curStr = std::to_string(cur);
+		//	//Value *v = IDMap.getValueOrNULL(line);
+		//	Value *v = IDMap.getValueOrNULL(cur);
+		//	if (v == NULL) {
+		//		// some of the items in the z3 file are merge nodes. They do not have
+		//		// an explicit representation in the LLVM file
+		//		continue;
+		//	}
+		//	if (Instruction *i = dyn_cast<Instruction>(v)) {
+		//		// Metadata is only inserted on instructions
+		//		LLVMContext &C = M.getContext();
+		//		//Value* elts[] = { ConstantInt::get(C, APInt(1, 1)) };
+    //    Metadata *elts[] = { ValueAsMetadata::get(ConstantInt::get(C, APInt(1, 1))) };
+		//		MDNode* md_node = MDNode::get(C, elts);
+		//		i->setMetadata("AssertSlice", md_node);
+		//	}
+		//}
+		//// Close and cleanup file
+		//z3Out->close();
+		//delete z3Out;
 	}
+
+  static bool copyFiles(std::string fromPath, std::string toPath) {
+    DEBUG_MSG("copyFiles: to: " << toPath << "\tfrom: " << fromPath << '\n');
+
+    std::ifstream from(fromPath, std::ios::binary);
+    if (!from) {
+      errs() << "[ERROR] copyFiles: unable to open from file:" 
+             << fromPath << ", aborting\n";
+      return false;
+    }
+    std::ofstream to(toPath
+        , std::ofstream::trunc | std::ios::binary);
+    if (!to) {
+      errs() << "[ERROR] copyFiles: unable to open to file:" 
+             << toPath << ", aborting\n";
+      return false;
+    }
+    to << from.rdbuf();
+    return true;
+  }
+
+  // Mark all the instructions on the forward slice of instructions in Ids as
+  // impacted ("Impacted" metadata), and all those on the backward slice as
+  // MayImpact ("MayImpact" metadata)
+  void addImpactedAndMayImpact(std::vector<std::string> ids, Module &M, std::string path) {
+    DEBUG_MSG("[DEBUG] Adding impact IDs\n");
+
+    // we make a copy of the original smt2 file for the forward and backward
+    // impact queries so we can distinguish between the two.
+    
+    // Try to remove .smt2 prefix if it exists
+    std::string basePath = path;
+    auto basePathIter = basePath.find(".smt2");
+    if (basePathIter != std::string::npos) {
+      basePath.erase(basePathIter, 5);
+    }
+    DEBUG_MSG("Base path:" << basePath << '\n');
+
+    std::string fwdImpactPath = basePath + "-fwdimp.smt2";
+    std::string bwdImpactPath = basePath + "-bwdimp.smt2";
+    bool suc;
+    suc = copyFiles(path, bwdImpactPath);
+    if (!suc) {
+      return;
+    }
+    suc = copyFiles(path, fwdImpactPath);
+    if (!suc) {
+      return;
+    }
+
+    // Open the copies
+    std::error_code ec;
+    raw_fd_ostream *fwdFile = new raw_fd_ostream(fwdImpactPath.c_str(), ec
+        , sys::fs::OpenFlags::F_Text);
+    if (ec) {
+      errs() << "[ERROR] addImpactAndMayImpact: unable to open fwd copy "
+             << ec.message() << "\n";
+      delete fwdFile;
+      return;
+    }
+
+    raw_fd_ostream *bwdFile = new raw_fd_ostream(fwdImpactPath.c_str(), ec
+        , sys::fs::OpenFlags::F_Text);
+    if (ec) {
+      errs() << "[ERROR] addImpactAndMayImpact: unable to open bwd copy "
+             << ec.message() << "\n";
+      fwdFile->close();
+      delete fwdFile;
+      delete bwdFile;
+      return;
+    }
+    DEBUG_MSG("opened forward and backward copies\n");
+
+    // Next add the backward and forward slice queries
+    //for (std::string id : ids) {
+    //  DEBUG_MSG("writing impact queries\n");
+    //  // Since they are in different files, we can use the same variable name
+    //  // for the query.
+    //  std::string varName = "impact" + id;
+    //  writeFwdSlice(id, varName, fwdSliceFile);
+    //  write
+    //}
+
+    fwdFile->close();
+    delete fwdFile;
+    bwdFile->close();
+    delete bwdFile;
+  }
 
 
 	// This will crash if any of the flags are inconsistent
 	void checkCommandLineFlags() {
+    // Other command line flags adding queries to the SMT2 file
+    // cause issues with impactIds. This could be solved by
+    // copying the SMT2 file for each of the options.
+    if (impactIds.size() && (fwdSliceIds.size() || sliceMD || queryAssert)){
+      errs() << "[ERROR] -impact cannot be used with -fwd, -mdassert or -assert" 
+             << "\n";
+      exit(EXIT_FAILURE);
+    }
+    if (impactIds.size() && !z3BinLoc.size()) {
+			errs() << "[ERROR] Z3 binary must be provided with -impact (-z3)\n";
+      exit(EXIT_FAILURE);
+    }
 		if (sliceMD && !z3BinLoc.size()) {
 			errs() << "[ERROR] Z3 binary must be provided with -mdassert (-z3)\n";
 			exit(EXIT_FAILURE);
