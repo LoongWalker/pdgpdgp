@@ -1535,7 +1535,7 @@ struct ContextInsenDynPDG : ModulePass {
   // output with metadata mdName.
   void markZ3Output(Module &M, std::string smt2Path
                    , std::string mdName) {
-    DEBUG_MSG("[DEBUG] Marking Z3 output, md name:" << mdName);
+    DEBUG_MSG("[DEBUG] Marking Z3 output, md name:" << mdName << '\n');
 		assert(z3BinLoc.size() && "z3 path not set");
 		assert(smt2Path.size() && ".smt2 path not set");
 		std::string z3OutputName = "z3_out.tmp";
@@ -1550,6 +1550,7 @@ struct ContextInsenDynPDG : ModulePass {
 				 + " | sed 's/(= (:var 0) //g'"  // remove leading (= 
 				 + " | sed 's/)//g'" // remove trailing paren
 				 + " | sed 's/#x//g'" // remove leading #x
+         + " | sed 's/ /\\n/g'" // split multiple numbers on single line
 				 + "  >" + z3OutputName; // save in temporary file
 		int retCode = system(cmd.c_str());
 		if (retCode != 0) {
@@ -1589,7 +1590,7 @@ struct ContextInsenDynPDG : ModulePass {
 				//Value* elts[] = { ConstantInt::get(C, APInt(1, 1)) };
         Metadata *elts[] = { ValueAsMetadata::get(ConstantInt::get(C, APInt(1, 1))) };
 				MDNode* md_node = MDNode::get(C, elts);
-				i->setMetadata("AssertSlice", md_node);
+				i->setMetadata(mdName, md_node);
 			}
 		}
 		// Close and cleanup file
@@ -1736,19 +1737,29 @@ struct ContextInsenDynPDG : ModulePass {
     DEBUG_MSG("opened forward and backward copies\n");
 
     // Next add the backward and forward slice queries
-    //for (std::string id : ids) {
-    //  DEBUG_MSG("writing impact queries\n");
-    //  // Since they are in different files, we can use the same variable name
-    //  // for the query.
-    //  std::string varName = "impact" + id;
-    //  writeFwdSlice(id, varName, fwdSliceFile);
-    //  write
-    //}
+    int count = 0; // counter used to unique variable names
+    for (std::string id : ids) {
+      DEBUG_MSG("writing impact queries\n");
+      // Since they are in different files, we can use the same variable name
+      // for the query.
+      std::string varName = "impact" + std::to_string(count);
+      writeFwdSlice(id, varName, fwdFile);
+      writeUniversalQuery(id, varName, bwdFile);
+      count++;
+    }
 
+    // Cleanup, we're done writing to the files. We need to do this so that
+    // when Z3 opens them the buffers a flushed(? probably).
     fwdFile->close();
     delete fwdFile;
     bwdFile->close();
     delete bwdFile;
+
+    // Run Z3 and attach metadata to the output file
+    DEBUG_MSG("attaching forward impact metadata\n");
+    markZ3Output(M, fwdImpactPath, "Impacted");
+    DEBUG_MSG("attaching backward impact metadata\n");
+    markZ3Output(M, bwdImpactPath, "MayImpact");
   }
 
 
