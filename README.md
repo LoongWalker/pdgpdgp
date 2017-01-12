@@ -21,7 +21,10 @@ non-system installations of LLVM can be seen below (Build Options).
 ### Z3
 
 Requires the Z3 library files to be built. Again, if these are in non-standard
-locations, see below.
+locations, see below. The syntax used in `.smt2` files has changed a bit,
+particularly for making queries. This was tested using Z3 commit
+cee7dd39444c9060186df79c2a2c7f8845de415b
+
 
 ## Building
 The passes are built using `cmake`. They require LLVM (tested on 3.5).
@@ -59,7 +62,8 @@ The datalog engine used in Z3 is required. Follow their build instructions:
     https://z3.codeplex.com/
 
 If Z3 is installed in a non-standard location the CMake variables `Z3_LIB` and
-`Z3_INC` should be set to the lib and include directories of the install. Use `-DZ3_LIB=...` and `-DZ3_INC...`
+`Z3_INC` should be set to the lib and include directories of the install. Use
+`-DZ3_LIB=...` and `-DZ3_INC=...`
 
 ## Directory Layout
 
