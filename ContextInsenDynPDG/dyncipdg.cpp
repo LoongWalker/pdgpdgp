@@ -1454,7 +1454,8 @@ struct ContextInsenDynPDG : ModulePass {
       assert(s == intIdStr && "ID not saved to module");
     }
 
-    // If necessary, add a query for each assertion
+    ///////////// Add queries to the output file
+    // Add a query for each assertion
     if (queryAssert) {
       for (size_t i = 0; i < assertCalls.size(); ++i) {
         Instruction *inst = assertCalls[i];
@@ -1471,6 +1472,8 @@ struct ContextInsenDynPDG : ModulePass {
         count++;
       }
     }
+    ///////////// End additions of queries
+
 
     DEBUG_MSG("Done\n");
     (*outFile) << "\n; End Facts\n";
@@ -1479,13 +1482,18 @@ struct ContextInsenDynPDG : ModulePass {
     outFile->close();
     delete outFile;
 
+    ///////////// Query the SMT2 file and add metadata
+    // Note: this must be done without any additional queries are added to the
+    // file otherwise their outputs will get mixed up
 		if (sliceMD) {
-			markAsserts(M, path);
+			markAsserts(M, path, assertCalls);
 		}
 
     if (impactIds.size()) {
       addImpactedAndMayImpact(impactIds, M, path);
     }
+    ///////////// End processing Z3 output
+
 
 
     // IR was modified (but only the metadata)
@@ -1598,9 +1606,75 @@ struct ContextInsenDynPDG : ModulePass {
 		delete z3Out;
   }
 
-	// Given the construction of the PDG, add metadata to each instruction on the
-	// slice of the assertion.
-	void markAsserts(Module &M, std::string smt2Path) {
+  // Attempt to copy fromPath to toPath.
+  //
+  // Returns false on error, otherwise true.
+  static bool copyFiles(std::string fromPath, std::string toPath) {
+    DEBUG_MSG("copyFiles: to: " << toPath << "\tfrom: " << fromPath << '\n');
+
+    std::ifstream from(fromPath, std::ios::binary);
+    if (!from) {
+      errs() << "[ERROR] copyFiles: unable to open from file:" 
+             << fromPath << ", aborting\n";
+      return false;
+    }
+    std::ofstream to(toPath
+        , std::ofstream::trunc | std::ios::binary);
+    if (!to) {
+      errs() << "[ERROR] copyFiles: unable to open to file:" 
+             << toPath << ", aborting\n";
+      return false;
+    }
+    to << from.rdbuf();
+    return true;
+  }
+
+  // Remove .smt2 at the end of path if possible. Otherwise, just return path.
+  std::string removeSmt2Extension(std::string path) {
+    // Try to remove .smt2 prefix if it exists
+    std::string basePath = path;
+    auto basePathIter = basePath.find(".smt2");
+    if (basePathIter != std::string::npos) {
+      basePath.erase(basePathIter, 5);
+    }
+    return basePath;
+  }
+
+  // Given the construction of the PDG at smt2path, add metadata to each
+  // instruction on the slice of the assertion. This assumes there are no
+  // queries added to the smt2 file.
+	void markAsserts(Module &M, std::string smt2Path
+      , std::vector<Instruction *> assertCalls) {
+    std::string path = removeSmt2Extension(smt2Path) + "-mdassert.smt2";
+    int ret = copyFiles(smt2Path, path);
+    if (!ret) {
+      errs() << "[ERROR] unable to copy smt2 file for assertions.\n"
+             << "aborting writing assertion metadata\n";
+
+      return;
+    }
+
+    std::error_code ec;
+    raw_fd_ostream *smt2File = new raw_fd_ostream(path.c_str(), ec
+        , sys::fs::OpenFlags::F_Text | sys::fs::OpenFlags::F_Append);
+
+    if (ec) {
+      errs() << "[ERROR] error opening assert smt2 file: " << ec.message() 
+             << "\nAborting adding assertion slice metadata\n";
+      return;
+    }
+
+    // Add queries for each assertion
+    for (size_t i = 0; i < assertCalls.size(); ++i) {
+      Instruction *inst = assertCalls[i];
+      writeUniversalQuery(inst, "q" + std::to_string(i), smt2File);
+    }
+
+    // Cleanup everything and ensure the file is flushed
+    smt2File->close();
+    delete smt2File;
+
+    // Run Z3 and attach the output
     markZ3Output(M, smt2Path, "AssertSlice");
     //DEBUG_MSG("[DEBUG] Marking assertions");
 		//assert(z3BinLoc.size() && "z3 path not set");
@@ -1664,26 +1738,6 @@ struct ContextInsenDynPDG : ModulePass {
 		//delete z3Out;
 	}
 
-  static bool copyFiles(std::string fromPath, std::string toPath) {
-    DEBUG_MSG("copyFiles: to: " << toPath << "\tfrom: " << fromPath << '\n');
-
-    std::ifstream from(fromPath, std::ios::binary);
-    if (!from) {
-      errs() << "[ERROR] copyFiles: unable to open from file:" 
-             << fromPath << ", aborting\n";
-      return false;
-    }
-    std::ofstream to(toPath
-        , std::ofstream::trunc | std::ios::binary);
-    if (!to) {
-      errs() << "[ERROR] copyFiles: unable to open to file:" 
-             << toPath << ", aborting\n";
-      return false;
-    }
-    to << from.rdbuf();
-    return true;
-  }
-
   // Mark all the instructions on the forward slice of instructions in Ids as
   // impacted ("Impacted" metadata), and all those on the backward slice as
   // MayImpact ("MayImpact" metadata)
@@ -1693,12 +1747,7 @@ struct ContextInsenDynPDG : ModulePass {
     // we make a copy of the original smt2 file for the forward and backward
     // impact queries so we can distinguish between the two.
     
-    // Try to remove .smt2 prefix if it exists
-    std::string basePath = path;
-    auto basePathIter = basePath.find(".smt2");
-    if (basePathIter != std::string::npos) {
-      basePath.erase(basePathIter, 5);
-    }
+    std::string basePath = removeSmt2Extension(path);
     DEBUG_MSG("Base path:" << basePath << '\n');
 
     std::string fwdImpactPath = basePath + "-fwdimp.smt2";
@@ -1706,10 +1755,14 @@ struct ContextInsenDynPDG : ModulePass {
     bool suc;
     suc = copyFiles(path, bwdImpactPath);
     if (!suc) {
+      errs() << "[ERROR] unable to copy backward impact file, aborting adding "
+             << "impact metadata\n";
       return;
     }
     suc = copyFiles(path, fwdImpactPath);
     if (!suc) {
+      errs() << "[ERROR] unable to copy backward impact file, aborting adding "
+             << "impact metadata\n";
       return;
     }
 
@@ -1768,8 +1821,13 @@ struct ContextInsenDynPDG : ModulePass {
     // Other command line flags adding queries to the SMT2 file
     // cause issues with impactIds. This could be solved by
     // copying the SMT2 file for each of the options.
-    if (impactIds.size() && (fwdSliceIds.size() || sliceMD || queryAssert)){
-      errs() << "[ERROR] -impact cannot be used with -fwd, -mdassert or -assert" 
+    if (impactIds.size() && (fwdSliceIds.size() || queryAssert)){
+      errs() << "[ERROR] -impact cannot be used with -fwd, or -assert" 
+             << "\n";
+      exit(EXIT_FAILURE);
+    }
+    if (impactIds.size() && (fwdSliceIds.size() || queryAssert)){
+      errs() << "[ERROR] -mdassert cannot be used with -fwd, -assert" 
              << "\n";
       exit(EXIT_FAILURE);
     }
@@ -1781,10 +1839,10 @@ struct ContextInsenDynPDG : ModulePass {
 			errs() << "[ERROR] Z3 binary must be provided with -mdassert (-z3)\n";
 			exit(EXIT_FAILURE);
 		}
-    if (sliceMD && !queryAssert) {
-      // adding slice metadata requires that slice queries are added
-      queryAssert = true;
-    }
+    //if (sliceMD && !queryAssert) {
+    //  // adding slice metadata requires that slice queries are added
+    //  queryAssert = true;
+    //}
 	}
 };
 
