@@ -1715,7 +1715,7 @@ struct ContextInsenDynPDG : ModulePass {
     // Open the copies
     std::error_code ec;
     raw_fd_ostream *fwdFile = new raw_fd_ostream(fwdImpactPath.c_str(), ec
-        , sys::fs::OpenFlags::F_Text);
+        , sys::fs::OpenFlags::F_Text | sys::fs::OpenFlags::F_Append);
     if (ec) {
       errs() << "[ERROR] addImpactAndMayImpact: unable to open fwd copy "
              << ec.message() << "\n";
@@ -1723,8 +1723,8 @@ struct ContextInsenDynPDG : ModulePass {
       return;
     }
 
-    raw_fd_ostream *bwdFile = new raw_fd_ostream(fwdImpactPath.c_str(), ec
-        , sys::fs::OpenFlags::F_Text);
+    raw_fd_ostream *bwdFile = new raw_fd_ostream(bwdImpactPath.c_str(), ec
+        , sys::fs::OpenFlags::F_Text | sys::fs::OpenFlags::F_Append);
     if (ec) {
       errs() << "[ERROR] addImpactAndMayImpact: unable to open bwd copy "
              << ec.message() << "\n";
