@@ -28,6 +28,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Format.h"
 #include "llvm/IR/LLVMContext.h"
 
 //#include "../ContextInsenAA/FactVisitor.h"
@@ -85,6 +86,12 @@ static cl::list<std::string>
                        " impacted/may-impact the list of provided instruction"
                        " IDs")
 	          , cl::CommaSeparated);
+
+cl::opt<bool>
+  impactStats("impact-stats"
+              , cl::desc("Output percentage may-impact and impacted instruction")
+              , cl::init(false));
+
 
 // Returns true if the passed function should not be visited
 static bool skipFunction(const Function *f) {
@@ -992,6 +999,10 @@ struct ContextInsenDynPDG : ModulePass {
     DEBUG_MSG("[DEBUG] smt2 filepath: " << path << '\n');
 
 		checkCommandLineFlags();
+    if (impactStats) {
+      printImpactedStats(M);
+      return true;
+    }
 
     // Initialize the solver
     z3::config cfg;
@@ -1799,6 +1810,22 @@ struct ContextInsenDynPDG : ModulePass {
       writeFwdSlice(id, varName, fwdFile);
       writeUniversalQuery(id, varName, bwdFile);
       count++;
+
+      // Mark the impacted ID as impacted
+      std::string idNoPrefix = id.substr(2, std::string::npos);
+			unsigned int cur = std::stoul(idNoPrefix, nullptr, 16);
+      Value *v = IDMap.getValueOrNULL(cur);
+      assert(v != NULL && "Unable to find impacted instruction in map");
+      if (Instruction *inst = dyn_cast<Instruction>(v)) {
+				LLVMContext &C = M.getContext();
+        Metadata *elts[] = { ValueAsMetadata::get(ConstantInt::get(C, APInt(1, 1))) };
+				MDNode* md_node = MDNode::get(C, elts);
+				inst->setMetadata("Impacted", md_node);
+      }
+      else {
+        assert(0 && "Impacted Value is not an instruction");
+      }
+
     }
 
     // Cleanup, we're done writing to the files. We need to do this so that
@@ -1815,6 +1842,33 @@ struct ContextInsenDynPDG : ModulePass {
     markZ3Output(M, bwdImpactPath, "MayImpact");
   }
 
+  void printImpactedStats(Module &M) {
+    unsigned numInst = 0;
+    unsigned numImpacted = 0;
+    unsigned numMayImpact = 0;
+    //for (auto fi = M.begin(), fe = M.end(); fi != fe; ++fi) {
+    for (Function &f : M) {
+      //for (auto bbi = fi->begin(), bbe = fi->end(); bbi != bbe; ++bbi) {
+      for (BasicBlock &b : f) {
+        for (Instruction &i : b) {
+          numInst++;
+          if (i.getMetadata("Impacted")) {
+            numImpacted++;
+          }
+          if (i.getMetadata("MayImpact")) {
+            numMayImpact++;
+          }
+        }
+      }
+    }
+    errs() << "Number of Instructions: " << numInst << '\n';
+    errs() << "Number Impacted: " << numImpacted << '\n';
+    errs() << "Number May Imapct: " << numMayImpact << '\n';
+    double percImpacted = ((double) numImpacted / (double) numInst) * 100.0;
+    double percMayImpact = ((double) numMayImpact / (double) numInst) * 100.0;
+    errs() << "Percent Impacted: " << format("%.3f\n", percImpacted);
+    errs() << "Percent May Impact: " << format("%.3f\n", percMayImpact);
+  }
 
 	// This will crash if any of the flags are inconsistent
 	void checkCommandLineFlags() {
