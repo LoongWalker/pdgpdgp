@@ -1812,7 +1812,10 @@ struct ContextInsenDynPDG : ModulePass {
       count++;
 
       // Mark the impacted ID as impacted
+      DEBUG_MSG("id:" << id << "\n");
+      assert(id.length() > 2 && "addImpactMayImpact: ID incorrect length");
       std::string idNoPrefix = id.substr(2, std::string::npos);
+      assert(idNoPrefix.length() > 0 && "addImpactMayImpact: unable to convert ID");
 			unsigned int cur = std::stoul(idNoPrefix, nullptr, 16);
       Value *v = IDMap.getValueOrNULL(cur);
       assert(v != NULL && "Unable to find impacted instruction in map");

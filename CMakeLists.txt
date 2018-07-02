@@ -13,7 +13,8 @@ message(STATUS ${Z3_INC})
 # Set your project compile flags. E.g. if using the C++ header files you will
 # need to enable C++11 support for your compiler.
 
-add_definitions(${LLVM_DEFINITIONS} -std=c++11 -Wall -g -fno-rtti)
+#add_definitions(${LLVM_DEFINITIONS} -std=c++11 -Wall -g -fno-rtti)
+add_definitions(${LLVM_DEFINITIONS} -std=c++11 -Wall -O2 -fno-rtti)
 include_directories(${LLVM_INCLUDE_DIRS} ${Z3_INC})
 
 #add_subdirectory(ContextInsenAA)

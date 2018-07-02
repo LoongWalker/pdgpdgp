@@ -8,6 +8,8 @@ export LLVM_INSTALL_DIR=/usr/bin
 
 # Location of datalog library files
 export PASSES=`pwd`/../../build
+# Location where Z3 is installed
+export Z3_INST=/home/markus/src/z3/install/
 ######
 
 #### The following variables should not have to be modified
@@ -24,6 +26,8 @@ export OPT=${LLVM_INSTALL_DIR}/opt
 export LLVMDIS=${LLVM_INSTALL_DIR}/llvm-dis
 export LLVMAS=${LLVM_INSTALL_DIR}/llvm-dis
 export CLANG=${LLVM_INSTALL_DIR}/clang
+
+export Z3=${Z3_INST}/bin/z3
 
 # OPT command to run context insensitive PDG. Just pass input BC file and
 # redirect the output
